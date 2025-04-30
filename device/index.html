@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Wi-Fi Light</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding: 2em;
+      background-color: #f0f0f0;
+    }
+    h1 {
+      color: #333;
+    }
+    #colorPicker {
+      width: 100px;
+      height: 100px;
+      border: none;
+      margin: 1em auto;
+      display: block;
+    }
+    button {
+      padding: 1em 2em;
+      font-size: 1em;
+      background-color: #333;
+      color: white;
+      border: none;
+      border-radius: 0.5em;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #555;
+    }
+  </style>
+</head>
+<body>
+  <h1>Set Light Colour</h1>
+  <input type="color" id="colorPicker" value="#ffffff">
+  <br>
+  <button id="updateBtn">Update Colour</button>
+
+  <script>
+    const picker = document.getElementById("colorPicker");
+    const button = document.getElementById("updateBtn");
+
+    button.addEventListener("click", () => {
+      const color = picker.value; // "#rrggbb"
+      const r = parseInt(color.substr(1, 2), 16);
+      const g = parseInt(color.substr(3, 2), 16);
+      const b = parseInt(color.substr(5, 2), 16);
+
+      fetch("/set", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ r: r, g: g, b: b })
+      });
+    });
+  </script>
+</body>
+</html>

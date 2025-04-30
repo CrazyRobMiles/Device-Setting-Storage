@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Settings Editor</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #fafafa;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      max-width: 480px;
+      width: 100%;
+    }
+
+    #instructions, #buttons, #status, #editor {
+      max-width: 480px;
+      margin-bottom: 30px;
+    }
+
+    #instructions {
+      padding: 15px;
+      border: 2px dashed #aaa;
+      background: #fefefe;
+      border-radius: 8px;
+    }
+
+    #buttons {
+      text-align: left;
+    }
+
+    button {
+      margin-right: 10px;
+      padding: 8px 16px;
+      font-size: 1em;
+      border-radius: 6px;
+      border: none;
+      background: #4CAF50;
+      color: white;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #45a049;
+    }
+
+    #status {
+      padding: 10px;
+      border-radius: 8px;
+      background: #eef;
+      color: #003366;
+      border: 1px solid #003366;
+    }
+
+    #editor {
+      border: 2px solid #ccc;
+      border-radius: 8px;
+      padding: 15px;
+      background: #fff;
+      min-height: 100px;
+    }
+
+    #editor.empty {
+      text-align: center;
+      color: #888;
+      font-style: italic;
+    }
+
+    .section {
+      border: 2px solid #2196F3;
+      border-radius: 8px;
+      margin: 20px 0;
+      padding: 15px;
+      background-color: #f0f8ff;
+    }
+
+    .section-title {
+      font-weight: bold;
+      font-size: 1.2em;
+      margin-bottom: 10px;
+      color: #0d47a1;
+    }
+
+    .field {
+      margin: 10px 0;
+    }
+
+    label {
+      display: inline-block;
+      width: 120px;
+      font-weight: bold;
+    }
+
+    input[type="text"], input[type="number"] {
+      width: 220px;
+      padding: 4px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>Settings Editor</h1>
+
+  <div id="instructions">
+    <strong>Instructions:</strong><br><br>
+    1. Connect your CircuitPython device via USB.<br>
+    2. Click <strong>Connect</strong> to allow access.<br>
+    3. Press <strong>Load</strong> to retrieve current device settings.<br>
+    4. Edit settings and press <strong>Save</strong> to update the device.
+  </div>
+
+  <div id="buttons">
+    <button onclick="connectSerial()">Connect</button>
+    <button onclick="loadSettings()">Load</button>
+    <button onclick="saveSettings()">Save</button>
+  </div>
+
+  <div id="status">Waiting for device connection...</div>
+
+  <div id="editor" class="empty">
+    <em>No settings loaded yet.</em>
+  </div>
+</div>
+
+<script>
+let port;
+let reader;
+let writer;
+let originalSettings = {};
+let buffer = "";
+
+function setStatus(message) {
+  document.getElementById('status').textContent = message;
+}
+
+async function connectSerial() {
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+
+    const textDecoder = new TextDecoderStream();
+    port.readable.pipeTo(textDecoder.writable);
+    const inputStream = textDecoder.readable;
+    reader = inputStream.getReader();
+
+    const textEncoder = new TextEncoderStream();
+    textEncoder.readable.pipeTo(port.writable);
+    writer = textEncoder.writable.getWriter();
+
+    setStatus("Connected to device.");
+  } catch (error) {
+    console.error("Connection failed:", error);
+    setStatus("Failed to connect to device.");
+  }
+}
+
+async function loadSettings() {
+  if (!writer) {
+    setStatus("Not connected!");
+    return;
+  }
+
+  await writer.write("GET\n");
+  setStatus("Sent GET request... waiting for settings");
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        console.log("Stream closed.");
+        break;
+      }
+      if (value) {
+        buffer += value;
+        if (buffer.includes("\n")) {
+          const messages = buffer.split("\n");
+          for (let i = 0; i < messages.length - 1; i++) {
+            const message = messages[i].trim();
+            if (message.length > 0) {
+              console.log("Full message received:", message);
+              try {
+                const settings = JSON.parse(message);
+                originalSettings = settings;
+                const editor = document.getElementById('editor');
+                editor.className = ""; // remove empty class
+                buildEditor(settings, editor);
+                setStatus("Settings loaded successfully!");
+              } catch (e) {
+                console.error("JSON parse error:", e);
+                setStatus("Error parsing settings.");
+              }
+            }
+          }
+          buffer = messages[messages.length - 1];
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Load error:", error);
+    setStatus("Error loading settings.");
+  }
+}
+
+function buildEditor(settings, container, parentKey = "", isTopLevel = true) {
+  if (isTopLevel) {
+    container.innerHTML = "";
+  }
+
+  for (const [key, value] of Object.entries(settings)) {
+    const fullKey = parentKey ? `${parentKey}_${key}` : key;
+
+    if (typeof value === 'object' && value !== null) {
+      const sectionDiv = document.createElement('div');
+      sectionDiv.className = "section";
+
+      const title = document.createElement('p');
+      title.className = "section-title";
+      title.textContent = key;
+      sectionDiv.appendChild(title);
+
+      buildEditor(value, sectionDiv, fullKey, false);
+      container.appendChild(sectionDiv);
+
+    } else {
+      const fieldDiv = document.createElement('div');
+      fieldDiv.className = "field";
+
+      const label = document.createElement('label');
+      label.textContent = key + ": ";
+      label.htmlFor = fullKey;
+
+      let input = document.createElement('input');
+      if (typeof value === 'number') {
+        input.type = "number";
+        input.value = value;
+      } else if (typeof value === 'boolean') {
+        input.type = "checkbox";
+        input.checked = value;
+      } else {
+        input.type = "text";
+        input.value = value;
+      }
+      input.id = fullKey;
+
+      fieldDiv.appendChild(label);
+      fieldDiv.appendChild(input);
+      container.appendChild(fieldDiv);
+    }
+  }
+}
+
+function collectSettings(settings, parentKey = "") {
+  let result = {};
+
+  for (const [key, value] of Object.entries(settings)) {
+    const fullKey = parentKey ? `${parentKey}_${key}` : key;
+
+    if (typeof value === 'object' && value !== null) {
+      result[key] = collectSettings(value, fullKey);
+    } else {
+      const input = document.getElementById(fullKey);
+      if (!input) continue;
+
+      if (typeof value === 'number') {
+        result[key] = parseFloat(input.value);
+      } else if (typeof value === 'boolean') {
+        result[key] = input.checked;
+      } else {
+        result[key] = input.value;
+      }
+    }
+  }
+
+  return result;
+}
+
+async function saveSettings() {
+  if (!writer) {
+    setStatus("Not connected!");
+    return;
+  }
+
+  const updatedSettings = collectSettings(originalSettings);
+  const jsonString = JSON.stringify(updatedSettings) + "\n";
+  await writer.write(jsonString);
+  setStatus("Settings sent successfully!");
+}
+</script>
+
+</body>
+</html>
